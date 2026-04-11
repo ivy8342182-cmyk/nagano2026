@@ -3113,7 +3113,8 @@ function getItemById(id) {
 
 function openGuide(itemId, e) {
   e && e.stopPropagation();
-  currentGuideItemId = itemId;
+  const key = String(itemId); // 永遠用字串當 key
+  currentGuideItemId = key;
   const item = getItemById(itemId);
   if (!item) return;
 
@@ -3124,35 +3125,35 @@ function openGuide(itemId, e) {
   document.getElementById('guideLoadingText').textContent = '讀取資料中...';
   openModal('guideModal');
 
-  // 永遠先從 Firebase 讀最新資料
+  // 從 Firebase 讀最新資料
   if (_db) {
     _db.collection('trips').doc(TRIP_ID + '_guide').get().then(snap => {
       if (snap.exists) {
         try {
           const parsed = JSON.parse(snap.data().guide);
-          guideData = parsed; // 更新記憶體
-          try { localStorage.setItem('nagano_guide', snap.data().guide); } catch(e) {}
+          // 確保所有 key 都是字串
+          const normalized = {};
+          Object.keys(parsed).forEach(k => { normalized[String(k)] = parsed[k]; });
+          guideData = normalized;
+          try { localStorage.setItem('nagano_guide', JSON.stringify(guideData)); } catch(e) {}
         } catch(e) {}
       }
-      // Firebase 讀完後，有資料就顯示，沒有就 AI 生成
-      if (guideData[itemId]) {
-        renderGuideContent(guideData[itemId], item);
+      if (guideData[key]) {
+        renderGuideContent(guideData[key], item);
       } else {
         document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
         generateGuideContent(item);
       }
     }).catch(() => {
-      // Firebase 讀失敗 → 用記憶體
-      if (guideData[itemId]) {
-        renderGuideContent(guideData[itemId], item);
+      if (guideData[key]) {
+        renderGuideContent(guideData[key], item);
       } else {
         generateGuideContent(item);
       }
     });
   } else {
-    // 沒有 Firebase → 用記憶體或 AI
-    if (guideData[itemId]) {
-      renderGuideContent(guideData[itemId], item);
+    if (guideData[key]) {
+      renderGuideContent(guideData[key], item);
     } else {
       document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
       generateGuideContent(item);
@@ -3227,8 +3228,8 @@ ${catHints[item.cat] || ''}
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
 
-    parsed.notes = guideData[currentGuideItemId]?.notes || [];
-    guideData[currentGuideItemId] = parsed;
+    parsed.notes = guideData[String(currentGuideItemId)]?.notes || [];
+    guideData[String(currentGuideItemId)] = parsed;
     
     // 直接存到 localStorage（同步操作，確保存完）
     try {
@@ -3250,8 +3251,8 @@ ${catHints[item.cat] || ''}
     clearInterval(msgTimer);
     _guideGenerating = false;
     const fallback = buildFallbackGuide(item);
-    fallback.notes = guideData[currentGuideItemId]?.notes || [];
-    guideData[currentGuideItemId] = fallback;
+    fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
+    guideData[String(currentGuideItemId)] = fallback;
     saveGuideData();
     renderGuideContent(fallback, item);
   }
