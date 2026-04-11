@@ -2048,29 +2048,23 @@ async function initFirebase() {
       await saveAll();
     }
 
-    // Guide 啟動邏輯：時間戳比較，誰新用誰
-    const localGuide = localStorage.getItem('nagano_guide');
-    const localGuideTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
-
+    // Guide 啟動邏輯：永遠以 Firebase 為準（最可靠）
     if (guideSnap.exists) {
       const gd = guideSnap.data();
-      const cloudTs = gd.guideUpdatedAt || 0;
-      // 雲端比本機新 → 用雲端的
-      if (cloudTs > localGuideTs) {
+      try {
+        guideData = JSON.parse(gd.guide);
+        localStorage.setItem('nagano_guide', gd.guide);
+        localStorage.setItem('nagano_guide_ts', String(gd.guideUpdatedAt || 0));
+      } catch(e) {}
+    } else {
+      // Firebase 沒有 → 用本機的，並上傳
+      const localGuide = localStorage.getItem('nagano_guide');
+      if (localGuide) {
         try {
-          guideData = JSON.parse(gd.guide);
-          localStorage.setItem('nagano_guide', gd.guide);
-          localStorage.setItem('nagano_guide_ts', String(cloudTs));
-          console.log('initFirebase: 使用雲端 guide（較新）');
+          guideData = JSON.parse(localGuide);
+          saveGuideData(); // 上傳到 Firebase
         } catch(e) {}
-      } else {
-        console.log('initFirebase: 使用本機 guide（較新或相同）');
-        if (localGuide) {
-          try { guideData = JSON.parse(localGuide); } catch(e) {}
-        }
       }
-    } else if (localGuide) {
-      try { guideData = JSON.parse(localGuide); } catch(e) {}
     }
 
     // 主資料 onSnapshot
@@ -2078,27 +2072,22 @@ async function initFirebase() {
       try {
         if (snap.exists) {
           const data = snap.data();
-          if (data.updatedBy !== DEVICE_ID) {
-            applyCloudData(data);
-          }
+          if (data.updatedBy !== DEVICE_ID) applyCloudData(data);
         }
       } catch(e) {}
     });
 
-    // guide onSnapshot：時間戳比較決定是否套用
+    // guide onSnapshot：生成中不覆蓋，其他時候直接套用最新的
     guideRef.onSnapshot((snap) => {
       try {
         if (!snap.exists || _guideGenerating) return;
         const data = snap.data();
-        if (data.updatedBy === DEVICE_ID) return;
         const cloudTs = data.guideUpdatedAt || 0;
         const localTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
-        // 雲端比本機新才套用
-        if (cloudTs > localTs) {
+        if (cloudTs >= localTs) {
           guideData = JSON.parse(data.guide);
           localStorage.setItem('nagano_guide', data.guide);
           localStorage.setItem('nagano_guide_ts', String(cloudTs));
-          console.log('onSnapshot guide: 套用較新的雲端資料');
         }
       } catch(e) {}
     });
