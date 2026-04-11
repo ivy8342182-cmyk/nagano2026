@@ -2042,9 +2042,17 @@ async function initFirebase() {
     }
 
     // Guide 啟動邏輯：
-    // - 本機有資料 → 永遠用本機（本機才是最新的編輯）
-    // - 本機沒資料 → 從雲端載入
     const localGuide = localStorage.getItem('nagano_guide');
+    const savedFlag = localStorage.getItem('nagano_guide_saved');
+    
+    // 顯示 debug 資訊（暫時）
+    setTimeout(() => {
+      const msg = `Guide debug:\n本機有資料: ${!!localGuide}\n已存標記: ${savedFlag || '無'}\n雲端有資料: ${guideSnap.exists}`;
+      console.log(msg);
+      // 只在有問題時顯示 alert
+      if (!localGuide && !guideSnap.exists) alert('兩邊都沒有 guide 資料');
+    }, 500);
+    
     if (!localGuide && guideSnap.exists) {
       const gd = guideSnap.data();
       try {
@@ -3230,9 +3238,18 @@ ${catHints[item.cat] || ''}
 
     parsed.notes = guideData[currentGuideItemId]?.notes || [];
     guideData[currentGuideItemId] = parsed;
+    
+    // 直接存到 localStorage（同步操作，確保存完）
+    try {
+      const ts = Date.now();
+      localStorage.setItem('nagano_guide', JSON.stringify(guideData));
+      localStorage.setItem('nagano_guide_ts', String(ts));
+      localStorage.setItem('nagano_guide_saved', 'YES_' + ts);
+    } catch(e) { alert('localStorage 存取失敗: ' + e.message); }
+    
+    // 再存 Firebase
     saveGuideData();
     _guideGenerating = false;
-
     clearInterval(msgTimer);
     renderGuideContent(parsed, item);
 
