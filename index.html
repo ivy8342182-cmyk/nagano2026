@@ -1561,6 +1561,7 @@
       <label class="form-label">類別</label>
       <select class="form-select" id="eCat">
         <option value="transport">🚌 交通</option>
+        <option value="flight">✈️ 機票</option>
         <option value="food">🍱 飲食</option>
         <option value="hotel">🏨 住宿</option>
         <option value="ticket">🎫 門票</option>
@@ -1757,7 +1758,7 @@
         <button type="button" class="transit-icon-opt" onclick="pickTransitIcon(this,'🚃')">🚃 電車</button>
         <button type="button" class="transit-icon-opt" onclick="pickTransitIcon(this,'🚅')">🚅 新幹線</button>
         <button type="button" class="transit-icon-opt" onclick="pickTransitIcon(this,'🚕')">🚕 計程車</button>
-        <button type="button" class="transit-icon-opt" onclick="pickTransitIcon(this,'🚡')">🚡 纜車</button>
+        <button type="button" class="transit-icon-opt" onclick="pickTransitIcon(this,'🚲')">🚲 腳踏車</button>
       </div>
       <input type="hidden" id="transitEditIcon" value="🚌">
     </div>
@@ -1825,7 +1826,7 @@ const CAT_LABELS = {
   sightseeing: '景點', hotel: '住宿', food: '美食', shopping: '購物', transit: '交通節點', flight: '航班', other: '其他'
 };
 const EXP_ICONS = {
-  transport: '🚌', food: '🍱', hotel: '🏨', ticket: '🎫', shopping: '🛍', other: '📌'
+  transport: '🚌', flight: '✈️', food: '🍱', hotel: '🏨', ticket: '🎫', shopping: '🛍', other: '📌'
 };
 
 let currentDateIdx = 0;
