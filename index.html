@@ -3220,6 +3220,9 @@ ${catHints[item.cat] || ''}
       })
     });
     const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`API 錯誤 ${response.status}: ${JSON.stringify(data)}`);
+    }
     const raw = data.content?.[0]?.text || '';
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
@@ -3242,6 +3245,8 @@ ${catHints[item.cat] || ''}
     renderGuideContent(parsed, item);
 
   } catch(err) {
+    console.error('generateGuideContent 失敗:', err);
+    alert('AI 生成失敗：' + err.message + '\n\n請確認網路連線是否正常');
     clearInterval(msgTimer);
     _guideGenerating = false;
     const fallback = buildFallbackGuide(item);
