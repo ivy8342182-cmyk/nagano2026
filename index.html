@@ -1910,8 +1910,12 @@ const DEVICE_ID = localStorage.getItem('nagano_device_id') || (() => {
 })();
 
 function clearAllCache() {
-  if (!confirm('確定清除所有本機快取？\n（雲端資料不受影響，清除後會重新從 Firebase 載入）')) return;
+  if (!confirm('確定清除所有本機快取？\n（導遊資訊會保留，其他資料會重新從 Firebase 載入）')) return;
+  const savedGuide = localStorage.getItem('nagano_guide');
+  const savedGuideTs = localStorage.getItem('nagano_guide_ts');
   localStorage.clear();
+  if (savedGuide) localStorage.setItem('nagano_guide', savedGuide);
+  if (savedGuideTs) localStorage.setItem('nagano_guide_ts', savedGuideTs);
   location.reload();
 }
 
@@ -2029,7 +2033,6 @@ async function initFirebase() {
     const ref = _db.collection('trips').doc(TRIP_ID);
     const guideRef = _db.collection('trips').doc(TRIP_ID + '_guide');
 
-    // 啟動時同時讀主資料和 guide 資料
     const [snap, guideSnap] = await Promise.all([ref.get(), guideRef.get()]);
 
     if (snap.exists) {
@@ -2038,25 +2041,20 @@ async function initFirebase() {
       await saveAll();
     }
 
-    // 啟動時 guide 資料：比較時間戳，用較新的版本
+    // Guide 啟動邏輯：
+    // - 本機有資料 → 永遠用本機（本機才是最新的編輯）
+    // - 本機沒資料 → 從雲端載入
     const localGuide = localStorage.getItem('nagano_guide');
-    const localGuideTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
-    if (guideSnap.exists) {
+    if (!localGuide && guideSnap.exists) {
       const gd = guideSnap.data();
-      const cloudTs = gd.guideUpdatedAt || 0;
-      if (!localGuide || cloudTs > localGuideTs) {
-        // 雲端比本機新，或本機沒有 → 用雲端
+      try {
         guideData = JSON.parse(gd.guide);
         localStorage.setItem('nagano_guide', gd.guide);
-        localStorage.setItem('nagano_guide_ts', String(cloudTs));
-      }
-      // 本機比雲端新 → 保留本機，並把本機資料推回 Firebase
-      if (localGuide && localGuideTs > cloudTs) {
-        saveGuideData();
-      }
+        localStorage.setItem('nagano_guide_ts', String(gd.guideUpdatedAt || 0));
+      } catch(e) {}
     }
 
-    // 主資料 onSnapshot（只同步其他裝置的更新）
+    // 主資料 onSnapshot
     ref.onSnapshot((snap) => {
       try {
         if (snap.exists) {
@@ -2068,18 +2066,18 @@ async function initFirebase() {
       } catch(e) {}
     });
 
-    // guide 資料 onSnapshot（只同步其他裝置的更新）
+    // guide onSnapshot：只有「其他裝置」且「本機沒有資料」才套用
     guideRef.onSnapshot((snap) => {
       try {
         if (!snap.exists || _guideGenerating) return;
         const data = snap.data();
-        if (data.updatedBy === DEVICE_ID) return; // 自己的更新略過
-        const cloudTime = data.guideUpdatedAt || 0;
-        const localTime = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
-        if (cloudTime > localTime) {
+        if (data.updatedBy === DEVICE_ID) return;
+        // 只在本機完全沒有資料時才套用（避免覆蓋本機新生成的內容）
+        const hasLocal = !!localStorage.getItem('nagano_guide');
+        if (!hasLocal) {
           guideData = JSON.parse(data.guide);
           localStorage.setItem('nagano_guide', data.guide);
-          localStorage.setItem('nagano_guide_ts', String(cloudTime));
+          localStorage.setItem('nagano_guide_ts', String(data.guideUpdatedAt || 0));
         }
       } catch(e) {}
     });
@@ -3576,7 +3574,6 @@ function saveGuideData() {
     localStorage.setItem('nagano_guide_ts', String(ts));
   } catch(e) {}
   if (!_db) return;
-  // 存在獨立文件，不干擾主資料的 onSnapshot
   _db.collection('trips').doc(TRIP_ID + '_guide').set({
     guide: JSON.stringify(guideData),
     guideUpdatedAt: ts,
