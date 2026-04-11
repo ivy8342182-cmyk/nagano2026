@@ -3211,43 +3211,15 @@ ${catHints[item.cat] || ''}
 - 只回傳 JSON，不要有其他文字`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(`API 錯誤 ${response.status}: ${JSON.stringify(data)}`);
-    }
-    const raw = data.content?.[0]?.text || '';
-    const clean = raw.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
-
-    parsed.notes = guideData[String(currentGuideItemId)]?.notes || [];
-    guideData[String(currentGuideItemId)] = parsed;
-    
-    // 直接存到 localStorage（同步操作，確保存完）
-    try {
-      const ts = Date.now();
-      localStorage.setItem('nagano_guide', JSON.stringify(guideData));
-      localStorage.setItem('nagano_guide_ts', String(ts));
-      localStorage.setItem('nagano_guide_saved', 'YES_' + ts);
-    } catch(e) { alert('localStorage 存取失敗: ' + e.message); }
-    
-    // 再存 Firebase
+    // 根據景點資料生成客製化內容
+    const generated = buildSmartGuide(item);
+    generated.notes = guideData[String(currentGuideItemId)]?.notes || [];
+    guideData[String(currentGuideItemId)] = generated;
     saveGuideData();
     _guideGenerating = false;
     clearInterval(msgTimer);
-    renderGuideContent(parsed, item);
-
+    renderGuideContent(generated, item);
   } catch(err) {
-    console.error('generateGuideContent 失敗:', err);
-    alert('AI 生成失敗：' + err.message + '\n\n請確認網路連線是否正常');
     clearInterval(msgTimer);
     _guideGenerating = false;
     const fallback = buildFallbackGuide(item);
@@ -3256,6 +3228,133 @@ ${catHints[item.cat] || ''}
     saveGuideData();
     renderGuideContent(fallback, item);
   }
+}
+
+function buildSmartGuide(item) {
+  const name = item.name;
+  const notes = item.notes || '';
+  const hours = item.hours || '';
+  const ticket = item.ticket || '';
+
+  const base = {
+    sightseeing: {
+      tags: [
+        { type: 'tip', label: '參觀攻略' },
+        { type: 'story', label: '景點故事' },
+        ...(ticket ? [{ type: 'reserve', label: '購票資訊' }] : []),
+      ],
+      sections: [
+        { title: '景點介紹', icon: '🏯', items: [
+          { icon: '📍', text: `${name}，${notes || '長野地區知名景點，值得深度探訪'}`, badge: '' },
+          ...(hours ? [{ icon: '⏰', text: `開放時間：${hours}，建議早上前往人潮較少`, badge: '小提示' }] : [{ icon: '⏰', text: '建議出發前確認最新開放時間', badge: '小提示' }]),
+          ...(ticket ? [{ icon: '🎫', text: `門票：${ticket}，建議提前購買避免排隊`, badge: '' }] : [{ icon: '🎫', text: '入場費用請現場確認', badge: '' }]),
+        ]},
+        { title: '參觀攻略', icon: '💡', items: [
+          { icon: '📸', text: `${name}最佳拍照時間為早晨，光線柔和且遊客較少`, badge: '小提示' },
+          { icon: '👟', text: '建議穿著舒適步行鞋，園區內步行距離較長', badge: '' },
+          { icon: '🚌', text: '建議搭大眾運輸前往，停車位有限', badge: '' },
+        ]},
+        { title: '注意事項', icon: '⚠️', items: [
+          { icon: '🌧', text: '雨天建議攜帶雨傘，部分區域為戶外展示', badge: '' },
+          { icon: '💴', text: '園內飲食販售，也可自備輕食', badge: '' },
+          { icon: '📵', text: '部分區域禁止拍照，請遵守現場規定', badge: '' },
+        ]},
+      ],
+    },
+    food: {
+      tags: [
+        { type: 'must-eat', label: '必吃' },
+        { type: 'must-order', label: '必點' },
+        ...(notes.includes('預約') ? [{ type: 'reserve', label: '需要預約' }] : []),
+      ],
+      sections: [
+        { title: '餐廳特色', icon: '🍽', items: [
+          { icon: '⭐', text: `${name}，${notes || '長野在地特色料理，深受旅客喜愛'}`, badge: '' },
+          ...(hours ? [{ icon: '🕐', text: `營業時間：${hours}`, badge: '' }] : [{ icon: '🕐', text: '請事先確認當日營業時間', badge: '小提示' }]),
+          { icon: '🌾', text: '使用信州在地食材，新鮮當季料理', badge: '' },
+        ]},
+        { title: '必點推薦', icon: '🥢', items: [
+          { icon: '🍜', text: '信州蕎麥麵（戸隠そば）—長野名物，Q彈有嚼勁', badge: '必點' },
+          { icon: '🍱', text: '山賊燒—長野特有炸雞料理，份量十足', badge: '必點' },
+          { icon: '🍎', text: '信州蘋果甜點—使用當地蘋果製作', badge: '' },
+        ]},
+        { title: '用餐建議', icon: '💡', items: [
+          { icon: '📞', text: '假日人潮多，建議提前電話預約或早點前往', badge: '需預約' },
+          { icon: '💴', text: '大多可使用信用卡，小店建議備妥日幣', badge: '小提示' },
+        ]},
+      ],
+    },
+    shopping: {
+      tags: [
+        { type: 'must-buy', label: '必買' },
+        { type: 'tip', label: '購物攻略' },
+      ],
+      sections: [
+        { title: '購物特色', icon: '🛍', items: [
+          { icon: '🏪', text: `${name}，${notes || '長野熱門購物地點'}`, badge: '' },
+          ...(hours ? [{ icon: '🕐', text: `營業時間：${hours}`, badge: '' }] : []),
+          { icon: '🎁', text: '長野伴手禮首選：七味唐辛子、野澤菜、信州味噌', badge: '必買' },
+        ]},
+        { title: '必買推薦', icon: '🎁', items: [
+          { icon: '🌶', text: '八幡屋礒五郎七味—長野知名香辛料品牌', badge: '必買' },
+          { icon: '🍎', text: '信州蘋果相關商品—果汁、果醬、乾燥蘋果', badge: '必買' },
+          { icon: '🥢', text: '蕎麥麵禮盒—送禮自用兩相宜', badge: '' },
+        ]},
+        { title: '購物攻略', icon: '💡', items: [
+          { icon: '💴', text: '消費滿5000日幣以上可辦理退稅（需護照）', badge: '小提示' },
+          { icon: '🧳', text: '可使用行李寄送服務，輕鬆逛街', badge: '' },
+        ]},
+      ],
+    },
+    hotel: {
+      tags: [{ type: 'tip', label: '入住提示' }],
+      sections: [
+        { title: '住宿資訊', icon: '🏨', items: [
+          { icon: '🏨', text: `${name}，${notes || '舒適住宿，位置便利'}`, badge: '' },
+          { icon: '🕐', text: `Check-in：${hours || '15:00'}　Check-out：11:00`, badge: '' },
+          { icon: '🧳', text: 'Check-in 前可寄放行李，方便出行', badge: '小提示' },
+        ]},
+        { title: '入住建議', icon: '💡', items: [
+          { icon: '🗣', text: '建議事先確認飯店是否提供中文服務', badge: '' },
+          { icon: '🛁', text: '若有大浴場，建議錯開尖峰時段使用（晚上22:00後人較少）', badge: '小提示' },
+          { icon: '🍳', text: '早餐建議提前告知飯店，部分需事先預訂', badge: '' },
+        ]},
+      ],
+    },
+    transit: {
+      tags: [{ type: 'tip', label: '交通攻略' }],
+      sections: [
+        { title: '車站資訊', icon: '🚉', items: [
+          { icon: '🚉', text: `${name}，${notes || '交通樞紐，轉乘方便'}`, badge: '' },
+          ...(hours ? [{ icon: '⏰', text: `服務時間：${hours}`, badge: '' }] : []),
+          { icon: '🗺', text: '建議提前確認月台與轉乘資訊，日本車站月台較多', badge: '小提示' },
+        ]},
+        { title: '搭乘攻略', icon: '💡', items: [
+          { icon: '🎫', text: '持 JR Pass 可免費搭乘 JR 線，需在乘車前開通', badge: '小提示' },
+          { icon: '💴', text: '建議使用 Suica/IC 卡感應，比買票更方便快速', badge: '' },
+          { icon: '🧳', text: '大型行李可使用宅配服務，避免攜帶上車不便', badge: '' },
+        ]},
+      ],
+    },
+    other: {
+      tags: [{ type: 'tip', label: '注意事項' }],
+      sections: [
+        { title: '行程資訊', icon: '📌', items: [
+          { icon: '📌', text: `${name}`, badge: '' },
+          ...(notes ? [{ icon: '📝', text: notes, badge: '' }] : []),
+          ...(hours ? [{ icon: '⏰', text: `時間：${hours}`, badge: '' }] : []),
+        ]},
+        { title: '實用建議', icon: '💡', items: [
+          { icon: '💡', text: '建議提前查詢最新資訊，確認當日狀況', badge: '' },
+          { icon: '📱', text: '下載 Google Maps 離線地圖，以備無網路時使用', badge: '小提示' },
+        ]},
+      ],
+    },
+  };
+
+  const guide = base[item.cat] || base.other;
+  guide.notes = [];
+  return guide;
 }
 
 function buildFallbackGuide(item) {
