@@ -1997,14 +1997,16 @@ function applyCloudData(data) {
 function loadAll() {
   try {
     const ver = localStorage.getItem('nagano_ver');
-    if (ver !== '5') {
+    if (ver !== '6') {
       // 升版時保留 guide 資料
       const savedGuide = localStorage.getItem('nagano_guide');
       const savedGuideTs = localStorage.getItem('nagano_guide_ts');
+      const savedDeviceId = localStorage.getItem('nagano_device_id');
       localStorage.clear();
-      localStorage.setItem('nagano_ver', '5');
+      localStorage.setItem('nagano_ver', '6');
       if (savedGuide) localStorage.setItem('nagano_guide', savedGuide);
       if (savedGuideTs) localStorage.setItem('nagano_guide_ts', savedGuideTs);
+      if (savedDeviceId) localStorage.setItem('nagano_device_id', savedDeviceId);
     } else {
       const it = localStorage.getItem('nagano_itineraries');
       if (it) itineraries = JSON.parse(it);
@@ -2020,6 +2022,11 @@ function loadAll() {
       if (tr) transports = JSON.parse(tr);
       const tk = localStorage.getItem('nagano_tickets');
       if (tk) tickets = JSON.parse(tk);
+      // guide 在 loadAll 裡一起讀，確保在 clear 之後才讀
+      const gd = localStorage.getItem('nagano_guide');
+      if (gd) {
+        try { guideData = JSON.parse(gd); } catch(e) {}
+      }
     }
   } catch(e) {}
 }
@@ -2041,25 +2048,29 @@ async function initFirebase() {
       await saveAll();
     }
 
-    // Guide 啟動邏輯：
+    // Guide 啟動邏輯：時間戳比較，誰新用誰
     const localGuide = localStorage.getItem('nagano_guide');
-    const savedFlag = localStorage.getItem('nagano_guide_saved');
-    
-    // 顯示 debug 資訊（暫時）
-    setTimeout(() => {
-      const msg = `Guide debug:\n本機有資料: ${!!localGuide}\n已存標記: ${savedFlag || '無'}\n雲端有資料: ${guideSnap.exists}`;
-      console.log(msg);
-      // 只在有問題時顯示 alert
-      if (!localGuide && !guideSnap.exists) alert('兩邊都沒有 guide 資料');
-    }, 500);
-    
-    if (!localGuide && guideSnap.exists) {
+    const localGuideTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
+
+    if (guideSnap.exists) {
       const gd = guideSnap.data();
-      try {
-        guideData = JSON.parse(gd.guide);
-        localStorage.setItem('nagano_guide', gd.guide);
-        localStorage.setItem('nagano_guide_ts', String(gd.guideUpdatedAt || 0));
-      } catch(e) {}
+      const cloudTs = gd.guideUpdatedAt || 0;
+      // 雲端比本機新 → 用雲端的
+      if (cloudTs > localGuideTs) {
+        try {
+          guideData = JSON.parse(gd.guide);
+          localStorage.setItem('nagano_guide', gd.guide);
+          localStorage.setItem('nagano_guide_ts', String(cloudTs));
+          console.log('initFirebase: 使用雲端 guide（較新）');
+        } catch(e) {}
+      } else {
+        console.log('initFirebase: 使用本機 guide（較新或相同）');
+        if (localGuide) {
+          try { guideData = JSON.parse(localGuide); } catch(e) {}
+        }
+      }
+    } else if (localGuide) {
+      try { guideData = JSON.parse(localGuide); } catch(e) {}
     }
 
     // 主資料 onSnapshot
@@ -2074,18 +2085,20 @@ async function initFirebase() {
       } catch(e) {}
     });
 
-    // guide onSnapshot：只有「其他裝置」且「本機沒有資料」才套用
+    // guide onSnapshot：時間戳比較決定是否套用
     guideRef.onSnapshot((snap) => {
       try {
         if (!snap.exists || _guideGenerating) return;
         const data = snap.data();
         if (data.updatedBy === DEVICE_ID) return;
-        // 只在本機完全沒有資料時才套用（避免覆蓋本機新生成的內容）
-        const hasLocal = !!localStorage.getItem('nagano_guide');
-        if (!hasLocal) {
+        const cloudTs = data.guideUpdatedAt || 0;
+        const localTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
+        // 雲端比本機新才套用
+        if (cloudTs > localTs) {
           guideData = JSON.parse(data.guide);
           localStorage.setItem('nagano_guide', data.guide);
-          localStorage.setItem('nagano_guide_ts', String(data.guideUpdatedAt || 0));
+          localStorage.setItem('nagano_guide_ts', String(cloudTs));
+          console.log('onSnapshot guide: 套用較新的雲端資料');
         }
       } catch(e) {}
     });
@@ -3586,19 +3599,22 @@ document.addEventListener('DOMContentLoaded', () => {
 // Persist guide data
 function saveGuideData() {
   const ts = Date.now();
+  const json = JSON.stringify(guideData);
   try {
-    localStorage.setItem('nagano_guide', JSON.stringify(guideData));
+    localStorage.setItem('nagano_guide', json);
     localStorage.setItem('nagano_guide_ts', String(ts));
   } catch(e) {}
   if (!_db) return;
   _db.collection('trips').doc(TRIP_ID + '_guide').set({
-    guide: JSON.stringify(guideData),
+    guide: json,
     guideUpdatedAt: ts,
     updatedBy: DEVICE_ID,
-  }).catch(()=>{});
+  }).catch(e => console.error('saveGuideData Firebase 失敗', e));
 }
 
 function loadGuideData() {
+  // guide 已在 loadAll 裡載入，這裡只做補充（以防萬一）
+  if (Object.keys(guideData).length > 0) return;
   try {
     const raw = localStorage.getItem('nagano_guide');
     if (raw) guideData = JSON.parse(raw);
