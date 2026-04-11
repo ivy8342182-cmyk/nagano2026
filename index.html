@@ -1800,7 +1800,6 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div class="modal-title" id="guideModalTitle" style="margin-bottom:0;text-align:left;font-size:17px;"></div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <button id="guideRefreshBtn" onclick="refreshGuideContent()" style="background:var(--moss-bg);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--moss-dark);cursor:pointer;font-family:'Shippori Mincho',serif;display:none;">🔄 重新生成</button>
         <button onclick="closeModal('guideModal')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-light);padding:4px 8px;">✕</button>
       </div>
     </div>
@@ -1813,6 +1812,8 @@
     <div id="guideContent" style="display:none;">
       <div id="guideTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;"></div>
       <div id="guideSections"></div>
+      <!-- 儲存按鈕 -->
+      <button onclick="saveGuideData(true)" style="width:100%;margin-top:16px;padding:12px;background:var(--moss);color:white;border:none;border-radius:12px;font-size:15px;font-family:'Shippori Mincho',serif;font-weight:700;cursor:pointer;">💾 儲存導遊資訊</button>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
         <div style="font-family:'Shippori Mincho',serif;font-size:14px;font-weight:700;color:var(--moss-dark);margin-bottom:10px;">📝 我的筆記</div>
         <div id="guideNotesList" style="margin-bottom:10px;"></div>
@@ -3098,8 +3099,6 @@ function refreshGuideContent() {
   document.getElementById('guideLoading').style.display = 'block';
   document.getElementById('guideContent').style.display = 'none';
   document.getElementById('guideLoadingText').textContent = '重新分析中...';
-  const refreshBtn = document.getElementById('guideRefreshBtn');
-  if (refreshBtn) refreshBtn.style.display = 'none';
   // 重新呼叫 AI
   generateGuideContent(item);
 }
@@ -3123,8 +3122,6 @@ function openGuide(itemId, e) {
   document.getElementById('guideLoading').style.display = 'block';
   document.getElementById('guideContent').style.display = 'none';
   document.getElementById('guideLoadingText').textContent = '讀取資料中...';
-  const refreshBtn = document.getElementById('guideRefreshBtn');
-  if (refreshBtn) refreshBtn.style.display = 'none';
   openModal('guideModal');
 
   // 永遠先從 Firebase 讀最新資料
@@ -3140,7 +3137,6 @@ function openGuide(itemId, e) {
       // Firebase 讀完後，有資料就顯示，沒有就 AI 生成
       if (guideData[itemId]) {
         renderGuideContent(guideData[itemId], item);
-        if (refreshBtn) refreshBtn.style.display = 'block';
       } else {
         document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
         generateGuideContent(item);
@@ -3149,7 +3145,6 @@ function openGuide(itemId, e) {
       // Firebase 讀失敗 → 用記憶體
       if (guideData[itemId]) {
         renderGuideContent(guideData[itemId], item);
-        if (refreshBtn) refreshBtn.style.display = 'block';
       } else {
         generateGuideContent(item);
       }
@@ -3158,7 +3153,6 @@ function openGuide(itemId, e) {
     // 沒有 Firebase → 用記憶體或 AI
     if (guideData[itemId]) {
       renderGuideContent(guideData[itemId], item);
-      if (refreshBtn) refreshBtn.style.display = 'block';
     } else {
       document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
       generateGuideContent(item);
@@ -3331,8 +3325,6 @@ function renderGuideContent(data, item) {
   if (content) content.style.display = 'block';
 
   // 顯示重新生成按鈕
-  const refreshBtn = document.getElementById('guideRefreshBtn');
-  if (refreshBtn) refreshBtn.style.display = 'block';
 
   // Tags — 可點擊篩選對應區塊
   const tagsEl = document.getElementById('guideTags');
@@ -3577,17 +3569,31 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ni) ni.addEventListener('keydown', e => { if (e.key === 'Enter') addGuideNote(); });
 });
 
-// Guide 資料：直接存 Firebase，不做任何 key/timestamp 比對
-function saveGuideData() {
+function saveGuideData(showFeedback) {
   const json = JSON.stringify(guideData);
-  // 存 localStorage 備份
   try { localStorage.setItem('nagano_guide', json); } catch(e) {}
-  // 直接寫 Firebase
-  if (!_db) return;
+  if (!_db) {
+    if (showFeedback) alert('⚠️ 離線中，只儲存在本機');
+    return;
+  }
   _db.collection('trips').doc(TRIP_ID + '_guide').set({
     guide: json,
     savedAt: Date.now(),
-  }).catch(e => console.error('saveGuideData 失敗', e));
+  }).then(() => {
+    if (showFeedback) {
+      const btn = document.querySelector('#guideContent button[onclick*="saveGuideData"]');
+      if (btn) {
+        btn.textContent = '✅ 已儲存！';
+        btn.style.background = '#5a8a5b';
+        setTimeout(() => {
+          btn.textContent = '💾 儲存導遊資訊';
+          btn.style.background = 'var(--moss)';
+        }, 2000);
+      }
+    }
+  }).catch(e => {
+    if (showFeedback) alert('❌ 儲存失敗：' + e.message);
+  });
 }
 
 function loadGuideData() {
