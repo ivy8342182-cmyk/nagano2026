@@ -1307,8 +1307,9 @@
       <span>Nagano Journey 2026</span>
     </div>
     <div class="header-dates">2026.06.25 — 2026.07.02</div>
-    <div id="syncStatus" style="margin-top:6px;">
+    <div id="syncStatus" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
       <span style="color:rgba(255,255,255,0.45);font-size:11px;letter-spacing:1px;">⏳ 連線中...</span>
+      <button onclick="clearAllCache()" style="background:rgba(255,255,255,0.12);border:none;border-radius:6px;padding:2px 8px;font-size:10px;color:rgba(255,255,255,0.5);cursor:pointer;letter-spacing:0.5px;">🗑 清除快取</button>
     </div>
   </div>
   <!-- TAB NAV FLOATING -->
@@ -1907,6 +1908,12 @@ const DEVICE_ID = localStorage.getItem('nagano_device_id') || (() => {
   localStorage.setItem('nagano_device_id', id);
   return id;
 })();
+
+function clearAllCache() {
+  if (!confirm('確定清除所有本機快取？\n（雲端資料不受影響，清除後會重新從 Firebase 載入）')) return;
+  localStorage.clear();
+  location.reload();
+}
 
 function showSyncStatus(status) {
   // status: 'syncing' | 'ok' | 'offline'
