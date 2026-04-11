@@ -768,6 +768,7 @@
     pointer-events: none;
     transition: opacity 0.25s;
   }
+  #guideItemModal { z-index: 400; }
   .modal-overlay.open {
     opacity: 1;
     pointer-events: all;
@@ -1148,7 +1149,13 @@
   .guide-tag.tip { background:#e3f2fd; color:#0d47a1; border:1px solid #90caf9; }
   .guide-tag.story { background:#f9fbe7; color:#558b2f; border:1px solid #c5e1a5; }
 
-  @keyframes pulse-red {
+  .guide-tag.tag-active {
+    box-shadow: 0 0 0 2px var(--moss);
+    font-weight: 800;
+    opacity: 1;
+  }
+  .guide-tag { opacity: 0.85; transition: opacity 0.15s, box-shadow 0.15s; }
+  .guide-tag:hover { opacity: 1; }
     0%,100% { box-shadow: 0 0 0 0 rgba(183,28,28,0.3); }
     50% { box-shadow: 0 0 0 4px rgba(183,28,28,0); }
   }
@@ -1337,7 +1344,7 @@
     </div>
     <div class="cat-filter" id="catFilter">
       <div class="cat-pill active" data-cat="all" onclick="filterCat('all',this)">全部</div>
-      <div class="cat-pill" data-cat="sightseeing" onclick="filterCat('sightseeing',this)">🏯 景點</div>
+      <div class="cat-pill" data-cat="sightseeing" onclick="filterCat('sightseeing',this)">📍 景點</div>
       <div class="cat-pill" data-cat="hotel" onclick="filterCat('hotel',this)">🏨 住宿</div>
       <div class="cat-pill" data-cat="food" onclick="filterCat('food',this)">🍜 美食</div>
       <div class="cat-pill" data-cat="shopping" onclick="filterCat('shopping',this)">🛍 購物</div>
@@ -1497,7 +1504,7 @@
     <div class="form-group">
       <label class="form-label">分類</label>
       <select class="form-select" id="iCat">
-        <option value="sightseeing">🏯 景點</option>
+        <option value="sightseeing">📍 景點</option>
         <option value="hotel">🏨 住宿</option>
         <option value="food">🍜 美食</option>
         <option value="shopping">🛍 購物</option>
@@ -1791,7 +1798,10 @@
     <div class="modal-handle"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div class="modal-title" id="guideModalTitle" style="margin-bottom:0;text-align:left;font-size:17px;"></div>
-      <button onclick="closeModal('guideModal')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-light);padding:4px 8px;">✕</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button id="guideRefreshBtn" onclick="refreshGuideContent()" style="background:var(--moss-bg);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--moss-dark);cursor:pointer;font-family:'Shippori Mincho',serif;display:none;">🔄 重新生成</button>
+        <button onclick="closeModal('guideModal')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-light);padding:4px 8px;">✕</button>
+      </div>
     </div>
     <div id="guideSubtitle" style="font-size:11px;color:var(--moss-light);letter-spacing:1px;margin-bottom:14px;text-align:center;"></div>
     <div id="guideLoading" style="text-align:center;padding:32px 0;">
@@ -1829,7 +1839,7 @@ const TRIP_DATES = [
 ];
 
 const CAT_ICONS = {
-  sightseeing: '🏯', hotel: '🏨', food: '🍜', shopping: '🛍', transit: '🚉', flight: '✈️', other: '📌'
+  sightseeing: '📍', hotel: '🏨', food: '🍜', shopping: '🛍', transit: '🚉', flight: '✈️', other: '📌'
 };
 const CAT_LABELS = {
   sightseeing: '景點', hotel: '住宿', food: '美食', shopping: '購物', transit: '交通節點', flight: '航班', other: '其他'
@@ -1976,9 +1986,14 @@ function applyCloudData(data) {
 function loadAll() {
   try {
     const ver = localStorage.getItem('nagano_ver');
-    if (ver !== '3') {
+    if (ver !== '5') {
+      // 升版時保留 guide 資料
+      const savedGuide = localStorage.getItem('nagano_guide');
+      const savedGuideTs = localStorage.getItem('nagano_guide_ts');
       localStorage.clear();
-      localStorage.setItem('nagano_ver', '3');
+      localStorage.setItem('nagano_ver', '5');
+      if (savedGuide) localStorage.setItem('nagano_guide', savedGuide);
+      if (savedGuideTs) localStorage.setItem('nagano_guide_ts', savedGuideTs);
     } else {
       const it = localStorage.getItem('nagano_itineraries');
       if (it) itineraries = JSON.parse(it);
@@ -2005,13 +2020,30 @@ async function initFirebase() {
     showSyncStatus('syncing');
 
     const ref = _db.collection('trips').doc(TRIP_ID);
-    const snap = await ref.get();
+    const guideRef = _db.collection('trips').doc(TRIP_ID + '_guide');
+
+    // 啟動時同時讀主資料和 guide 資料
+    const [snap, guideSnap] = await Promise.all([ref.get(), guideRef.get()]);
+
     if (snap.exists) {
       applyCloudData(snap.data());
     } else {
       await saveAll();
     }
 
+    // 啟動時 guide 資料：本機有就用本機，本機沒有才從 Firebase 讀
+    const localGuide = localStorage.getItem('nagano_guide');
+    const localGuideTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
+    if (!localGuide && guideSnap.exists) {
+      // 本機沒有資料，從 Firebase 載入
+      const gd = guideSnap.data();
+      guideData = JSON.parse(gd.guide);
+      localStorage.setItem('nagano_guide', gd.guide);
+      localStorage.setItem('nagano_guide_ts', String(gd.guideUpdatedAt || 0));
+    }
+    // 本機有資料就保留本機的（已在 loadGuideData() 載入）
+
+    // 主資料 onSnapshot（只同步其他裝置的更新）
     ref.onSnapshot((snap) => {
       try {
         if (snap.exists) {
@@ -2022,6 +2054,23 @@ async function initFirebase() {
         }
       } catch(e) {}
     });
+
+    // guide 資料 onSnapshot（只同步其他裝置的更新）
+    guideRef.onSnapshot((snap) => {
+      try {
+        if (!snap.exists || _guideGenerating) return;
+        const data = snap.data();
+        if (data.updatedBy === DEVICE_ID) return; // 自己的更新略過
+        const cloudTime = data.guideUpdatedAt || 0;
+        const localTime = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
+        if (cloudTime > localTime) {
+          guideData = JSON.parse(data.guide);
+          localStorage.setItem('nagano_guide', data.guide);
+          localStorage.setItem('nagano_guide_ts', String(cloudTime));
+        }
+      } catch(e) {}
+    });
+
     showSyncStatus('ok');
   } catch(e) {
     console.warn('Firebase 連線失敗', e);
@@ -3052,6 +3101,24 @@ let currentGuideItemId = null;
 // guideData stored per item id: { sections: [{title,icon,items:[{icon,text,badge}]}], notes: [] }
 let guideData = {};
 
+let _guideGenerating = false; // 鎖：生成中不允許 onSnapshot 覆蓋
+
+function refreshGuideContent() {
+  const item = getItemById(currentGuideItemId);
+  if (!item) return;
+  _guideGenerating = true;
+  // 清除快取，強制重新生成
+  delete guideData[currentGuideItemId];
+  // 重新顯示 loading
+  document.getElementById('guideLoading').style.display = 'block';
+  document.getElementById('guideContent').style.display = 'none';
+  document.getElementById('guideLoadingText').textContent = '重新分析中...';
+  const refreshBtn = document.getElementById('guideRefreshBtn');
+  if (refreshBtn) refreshBtn.style.display = 'none';
+  // 重新呼叫 AI
+  generateGuideContent(item);
+}
+
 function getItemById(id) {
   for (const dayItems of Object.values(itineraries)) {
     const found = dayItems.find(i => i.id === id);
@@ -3071,6 +3138,8 @@ function openGuide(itemId, e) {
   document.getElementById('guideLoading').style.display = 'block';
   document.getElementById('guideContent').style.display = 'none';
   document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
+  const refreshBtn = document.getElementById('guideRefreshBtn');
+  if (refreshBtn) refreshBtn.style.display = 'none';
 
   openModal('guideModal');
 
@@ -3101,7 +3170,7 @@ async function generateGuideContent(item) {
     other: '重點介紹：地點特色、實用建議、注意事項',
   };
 
-  const prompt = `你是一位專業的日本長野地區導遊，請針對「${item.name}」提供詳細的導遊資訊。
+  const prompt = `你是一位專業的日本長野地區導遊，請針對「${item.name}」提供豐富詳細的導遊資訊。
 
 分類：${CAT_LABELS[item.cat]}
 備註：${item.notes || '無'}
@@ -3114,20 +3183,24 @@ ${catHints[item.cat] || ''}
   ],
   "sections": [
     {
-      "title": "區塊標題",
+      "title": "區塊標題（例：景點故事、參觀攻略、必吃推薦、注意事項）",
       "icon": "emoji",
       "items": [
-        {"icon": "emoji", "text": "說明文字（30字以內）", "badge": "必吃|必買|必點|需預約|小提示|（空字串表示無徽章）"}
+        {"icon": "emoji", "text": "說明文字（50字以內，內容要具體實用）", "badge": "必吃|必買|必點|需預約|小提示|（空字串表示無徽章）"}
       ]
     }
   ]
 }
 
-tags 最多 4 個，只選最重要的。
-sections 包含：景點故事/餐廳特色、攻略建議、特別注意（若有需要預約則一定要加）。
-每個 section 的 items 最多 5 筆。
-badge 只在該項目特別重要時才填寫，其餘留空字串。
-只回傳 JSON，不要有其他文字。`;
+重要規則：
+- tags 最多 4 個，只選最重要的
+- sections 至少 3 個，包含：歷史故事/特色介紹、實用攻略、特別注意事項
+- 每個 section 的 items 4-6 筆，內容要具體有用
+- 景點/餐廳要有歷史背景或特色故事
+- 攻略要有具體建議（時間、入口、拍照地點等）
+- 若需要預約一定要標註
+- badge 只在特別重要時填寫
+- 只回傳 JSON，不要有其他文字`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -3144,18 +3217,19 @@ badge 只在該項目特別重要時才填寫，其餘留空字串。
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
 
-    // Add empty notes array
-    parsed.notes = [];
+    parsed.notes = guideData[currentGuideItemId]?.notes || [];
     guideData[currentGuideItemId] = parsed;
     saveGuideData();
+    _guideGenerating = false;
 
     clearInterval(msgTimer);
     renderGuideContent(parsed, item);
 
   } catch(err) {
     clearInterval(msgTimer);
-    // Fallback: basic structure
+    _guideGenerating = false;
     const fallback = buildFallbackGuide(item);
+    fallback.notes = guideData[currentGuideItemId]?.notes || [];
     guideData[currentGuideItemId] = fallback;
     saveGuideData();
     renderGuideContent(fallback, item);
@@ -3234,12 +3308,60 @@ function renderGuideContent(data, item) {
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
 
-  // Tags
+  // 顯示重新生成按鈕
+  const refreshBtn = document.getElementById('guideRefreshBtn');
+  if (refreshBtn) refreshBtn.style.display = 'block';
+
+  // Tags — 可點擊篩選對應區塊
   const tagsEl = document.getElementById('guideTags');
   if (tagsEl) {
-    tagsEl.innerHTML = (data.tags || []).map(t => `
-      <span class="guide-tag ${t.type}">${tagIcon(t.type)} ${t.label}</span>
+    // 加入「全部」tag
+    const allTags = [{ type: 'all', label: '全部' }, ...(data.tags || [])];
+    tagsEl.innerHTML = allTags.map(t => `
+      <span class="guide-tag ${t.type === 'all' ? 'tag-active' : ''}" data-tag="${t.type}" style="cursor:pointer;">
+        ${t.type === 'all' ? '📋' : tagIcon(t.type)} ${t.label}
+      </span>
     `).join('');
+
+    // 點擊事件
+    tagsEl.onclick = function(e) {
+      const tag = e.target.closest('.guide-tag');
+      if (!tag) return;
+      const type = tag.dataset.tag;
+
+      // 切換 active 樣式
+      tagsEl.querySelectorAll('.guide-tag').forEach(t => t.classList.remove('tag-active'));
+      tag.classList.add('tag-active');
+
+      // 顯示/隱藏 sections
+      const sections = document.querySelectorAll('#guideSections .guide-section');
+      sections.forEach((sec, si) => {
+        if (type === 'all') {
+          sec.style.display = '';
+        } else {
+          // 比對 section 標題或內容是否與 tag 相關
+          const title = sec.querySelector('.guide-section-title')?.textContent || '';
+          const TAG_KEYWORDS = {
+            'must-eat': ['美食','必吃','推薦','料理','食'],
+            'must-buy': ['購物','必買','伴手','商品'],
+            'must-order': ['必點','菜單','招牌'],
+            'reserve': ['預約','注意','提醒'],
+            'tip': ['攻略','建議','提示','技巧'],
+            'story': ['故事','歷史','特色','介紹','背景'],
+          };
+          const keywords = TAG_KEYWORDS[type] || [];
+          const match = keywords.some(k => title.includes(k));
+          sec.style.display = match ? '' : 'none';
+        }
+        // 有顯示的 section 確保展開
+        if (sec.style.display !== 'none') {
+          const body = sec.querySelector('.guide-section-body');
+          const toggle = sec.querySelector('.guide-section-toggle');
+          if (body) body.classList.remove('collapsed');
+          if (toggle) toggle.classList.add('open');
+        }
+      });
+    };
   }
 
   // Sections
@@ -3247,7 +3369,7 @@ function renderGuideContent(data, item) {
   if (sectionsEl) {
     sectionsEl.innerHTML = (data.sections || []).map((sec, si) => `
       <div class="guide-section">
-        <div class="guide-section-header" onclick="toggleGuideSection(${si})">
+        <div class="guide-section-header" data-si="${si}">
           <div class="guide-section-title" style="flex:1;">${sec.icon} ${sec.title}</div>
           <span class="guide-section-toggle open" id="guide-toggle-${si}">▼</span>
         </div>
@@ -3258,15 +3380,36 @@ function renderGuideContent(data, item) {
               <span class="guide-item-text" id="gtext-${si}-${ii}">${it.text}</span>
               ${it.badge ? `<span class="guide-item-badge ${badgeClass(it.badge)}">${it.badge}</span>` : ''}
               <div style="display:flex;gap:4px;flex-shrink:0;margin-left:4px;">
-                <button style="background:var(--moss-bg);border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;color:var(--moss);" onclick="event.stopPropagation();openEditGuideItem(${si},${ii})">✏️</button>
-                <button style="background:#fef0f0;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;color:var(--red);" onclick="event.stopPropagation();deleteGuideItem(${si},${ii})">✕</button>
+                <button data-edit-si="${si}" data-edit-ii="${ii}" style="background:var(--moss-bg);border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;color:var(--moss);">✏️</button>
+                <button data-del-si="${si}" data-del-ii="${ii}" style="background:#fef0f0;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px;color:var(--red);">✕</button>
               </div>
             </div>
           `).join('')}
-          <button class="guide-add-btn" onclick="event.stopPropagation();openAddGuideItem(${si})">＋ 新增項目</button>
+          <button data-add-si="${si}" class="guide-add-btn">＋ 新增項目</button>
         </div>
       </div>
     `).join('');
+
+    // 用事件委派，綁在父元素上（不受 innerHTML 重繪影響）
+    sectionsEl.onclick = function(e) {
+      const header = e.target.closest('.guide-section-header');
+      const editBtn = e.target.closest('[data-edit-si]');
+      const delBtn = e.target.closest('[data-del-si]');
+      const addBtn = e.target.closest('[data-add-si]');
+
+      if (editBtn) {
+        e.stopPropagation();
+        openEditGuideItem(parseInt(editBtn.dataset.editSi), parseInt(editBtn.dataset.editIi));
+      } else if (delBtn) {
+        e.stopPropagation();
+        deleteGuideItem(parseInt(delBtn.dataset.delSi), parseInt(delBtn.dataset.delIi));
+      } else if (addBtn) {
+        e.stopPropagation();
+        openAddGuideItem(parseInt(addBtn.dataset.addSi));
+      } else if (header) {
+        toggleGuideSection(parseInt(header.dataset.si));
+      }
+    };
   }
 
   // Notes
@@ -3290,7 +3433,7 @@ function toggleGuideSection(idx) {
   const toggle = document.getElementById(`guide-toggle-${idx}`);
   if (!body) return;
   const collapsed = body.classList.toggle('collapsed');
-  toggle.classList.toggle('open', !collapsed);
+  if (toggle) toggle.classList.toggle('open', !collapsed);
 }
 
 // Edit guide item via modal
@@ -3300,13 +3443,11 @@ function openEditGuideItem(si, ii) {
   _editGuideSi = si; _editGuideIi = ii;
   const data = guideData[currentGuideItemId];
   if (!data) return;
-  const item = data.sections[si].items[ii];
-  document.getElementById('guideItemInput').value = item.text;
+  const it = data.sections[si].items[ii];
+  document.getElementById('guideItemInput').value = it.text;
   document.getElementById('guideItemModalTitle').textContent = '編輯項目';
   document.getElementById('guideItemSaveBtn').onclick = saveEditGuideItem;
-  // 先關閉 guideModal，再開 guideItemModal
-  document.getElementById('guideModal').classList.remove('open');
-  setTimeout(() => openModal('guideItemModal'), 50);
+  openModal('guideItemModal');
 }
 
 function openAddGuideItem(si) {
@@ -3314,8 +3455,7 @@ function openAddGuideItem(si) {
   document.getElementById('guideItemInput').value = '';
   document.getElementById('guideItemModalTitle').textContent = '新增項目';
   document.getElementById('guideItemSaveBtn').onclick = saveAddGuideItem;
-  document.getElementById('guideModal').classList.remove('open');
-  setTimeout(() => openModal('guideItemModal'), 50);
+  openModal('guideItemModal');
 }
 
 function saveEditGuideItem() {
@@ -3327,11 +3467,7 @@ function saveEditGuideItem() {
   saveGuideData();
   closeModal('guideItemModal');
   const itItem = getItemById(currentGuideItemId);
-  // 重新開啟 guideModal 顯示更新後的內容
-  setTimeout(() => {
-    openModal('guideModal');
-    renderGuideContent(data, itItem);
-  }, 50);
+  renderGuideContent(data, itItem);
 }
 
 function saveAddGuideItem() {
@@ -3343,10 +3479,7 @@ function saveAddGuideItem() {
   saveGuideData();
   closeModal('guideItemModal');
   const item = getItemById(currentGuideItemId);
-  setTimeout(() => {
-    openModal('guideModal');
-    renderGuideContent(data, item);
-  }, 50);
+  renderGuideContent(data, item);
 }
 
 function editGuideItem(si, ii) { openEditGuideItem(si, ii); }
@@ -3424,10 +3557,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Persist guide data
 function saveGuideData() {
-  try { localStorage.setItem('nagano_guide', JSON.stringify(guideData)); } catch(e) {}
+  const ts = Date.now();
+  try {
+    localStorage.setItem('nagano_guide', JSON.stringify(guideData));
+    localStorage.setItem('nagano_guide_ts', String(ts));
+  } catch(e) {}
   if (!_db) return;
-  _db.collection('trips').doc(TRIP_ID + '_guide').set({ data: JSON.stringify(guideData) }).catch(()=>{});
+  // 存在獨立文件，不干擾主資料的 onSnapshot
+  _db.collection('trips').doc(TRIP_ID + '_guide').set({
+    guide: JSON.stringify(guideData),
+    guideUpdatedAt: ts,
+    updatedBy: DEVICE_ID,
+  }).catch(()=>{});
 }
+
 function loadGuideData() {
   try {
     const raw = localStorage.getItem('nagano_guide');
