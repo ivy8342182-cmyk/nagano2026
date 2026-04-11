@@ -2031,17 +2031,23 @@ async function initFirebase() {
       await saveAll();
     }
 
-    // 啟動時 guide 資料：本機有就用本機，本機沒有才從 Firebase 讀
+    // 啟動時 guide 資料：比較時間戳，用較新的版本
     const localGuide = localStorage.getItem('nagano_guide');
     const localGuideTs = parseInt(localStorage.getItem('nagano_guide_ts') || '0');
-    if (!localGuide && guideSnap.exists) {
-      // 本機沒有資料，從 Firebase 載入
+    if (guideSnap.exists) {
       const gd = guideSnap.data();
-      guideData = JSON.parse(gd.guide);
-      localStorage.setItem('nagano_guide', gd.guide);
-      localStorage.setItem('nagano_guide_ts', String(gd.guideUpdatedAt || 0));
+      const cloudTs = gd.guideUpdatedAt || 0;
+      if (!localGuide || cloudTs > localGuideTs) {
+        // 雲端比本機新，或本機沒有 → 用雲端
+        guideData = JSON.parse(gd.guide);
+        localStorage.setItem('nagano_guide', gd.guide);
+        localStorage.setItem('nagano_guide_ts', String(cloudTs));
+      }
+      // 本機比雲端新 → 保留本機，並把本機資料推回 Firebase
+      if (localGuide && localGuideTs > cloudTs) {
+        saveGuideData();
+      }
     }
-    // 本機有資料就保留本機的（已在 loadGuideData() 載入）
 
     // 主資料 onSnapshot（只同步其他裝置的更新）
     ref.onSnapshot((snap) => {
