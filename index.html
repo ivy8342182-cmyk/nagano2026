@@ -2038,41 +2038,12 @@ async function initFirebase() {
     showSyncStatus('syncing');
 
     const ref = _db.collection('trips').doc(TRIP_ID);
-    const guideRef = _db.collection('trips').doc(TRIP_ID + '_guide');
-
-    const [snap, guideSnap] = await Promise.all([ref.get(), guideRef.get()]);
+    const snap = await ref.get();
 
     if (snap.exists) {
       applyCloudData(snap.data());
     } else {
       await saveAll();
-    }
-
-    // Guide 啟動：用 saveKey 比對，key 不同就代表 Firebase 有更新
-    if (guideSnap.exists) {
-      const gd = guideSnap.data();
-      const cloudKey = gd.saveKey || '';
-      const localKey = localStorage.getItem('nagano_guide_key') || '';
-      // key 不同 → Firebase 有新版本，強制套用
-      if (cloudKey !== localKey) {
-        try {
-          guideData = JSON.parse(gd.guide);
-          localStorage.setItem('nagano_guide', gd.guide);
-          localStorage.setItem('nagano_guide_key', cloudKey);
-        } catch(e) {}
-      } else {
-        // key 相同 → 用本機（跟 Firebase 一樣）
-        const localGuide = localStorage.getItem('nagano_guide');
-        if (localGuide) {
-          try { guideData = JSON.parse(localGuide); } catch(e) {}
-        }
-      }
-    } else {
-      // Firebase 沒有 → 本機有的話上傳
-      const localGuide = localStorage.getItem('nagano_guide');
-      if (localGuide) {
-        try { guideData = JSON.parse(localGuide); saveGuideData(); } catch(e) {}
-      }
     }
 
     // 主資料 onSnapshot
@@ -2081,21 +2052,6 @@ async function initFirebase() {
         if (snap.exists) {
           const data = snap.data();
           if (data.updatedBy !== DEVICE_ID) applyCloudData(data);
-        }
-      } catch(e) {}
-    });
-
-    // guide onSnapshot：key 不同才更新
-    guideRef.onSnapshot((snap) => {
-      try {
-        if (!snap.exists || _guideGenerating) return;
-        const data = snap.data();
-        const cloudKey = data.saveKey || '';
-        const localKey = localStorage.getItem('nagano_guide_key') || '';
-        if (cloudKey !== localKey) {
-          guideData = JSON.parse(data.guide);
-          localStorage.setItem('nagano_guide', data.guide);
-          localStorage.setItem('nagano_guide_key', cloudKey);
         }
       } catch(e) {}
     });
@@ -3166,45 +3122,47 @@ function openGuide(itemId, e) {
   document.getElementById('guideSubtitle').textContent = `${CAT_ICONS[item.cat]} ${CAT_LABELS[item.cat]} · 導遊資訊`;
   document.getElementById('guideLoading').style.display = 'block';
   document.getElementById('guideContent').style.display = 'none';
-  document.getElementById('guideLoadingText').textContent = '載入中...';
+  document.getElementById('guideLoadingText').textContent = '讀取資料中...';
   const refreshBtn = document.getElementById('guideRefreshBtn');
   if (refreshBtn) refreshBtn.style.display = 'none';
-
   openModal('guideModal');
 
-  // 記憶體有快取 → 直接顯示
-  if (guideData[itemId]) {
-    renderGuideContent(guideData[itemId], item);
-    if (refreshBtn) refreshBtn.style.display = 'block';
-    return;
-  }
-
-  // 記憶體沒有 → 先查 Firebase，有就用，沒有才呼叫 AI
+  // 永遠先從 Firebase 讀最新資料
   if (_db) {
-    document.getElementById('guideLoadingText').textContent = '讀取儲存的資料中...';
     _db.collection('trips').doc(TRIP_ID + '_guide').get().then(snap => {
       if (snap.exists) {
         try {
-          const allGuide = JSON.parse(snap.data().guide);
-          guideData = allGuide;
-          // 更新 localStorage
-          localStorage.setItem('nagano_guide', snap.data().guide);
-          localStorage.setItem('nagano_guide_key', snap.data().saveKey || '');
-          if (allGuide[itemId]) {
-            renderGuideContent(allGuide[itemId], item);
-            if (refreshBtn) refreshBtn.style.display = 'block';
-            return;
-          }
+          const parsed = JSON.parse(snap.data().guide);
+          guideData = parsed; // 更新記憶體
+          try { localStorage.setItem('nagano_guide', snap.data().guide); } catch(e) {}
         } catch(e) {}
       }
-      // Firebase 也沒有 → 呼叫 AI
-      document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
-      generateGuideContent(item);
+      // Firebase 讀完後，有資料就顯示，沒有就 AI 生成
+      if (guideData[itemId]) {
+        renderGuideContent(guideData[itemId], item);
+        if (refreshBtn) refreshBtn.style.display = 'block';
+      } else {
+        document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
+        generateGuideContent(item);
+      }
     }).catch(() => {
-      generateGuideContent(item);
+      // Firebase 讀失敗 → 用記憶體
+      if (guideData[itemId]) {
+        renderGuideContent(guideData[itemId], item);
+        if (refreshBtn) refreshBtn.style.display = 'block';
+      } else {
+        generateGuideContent(item);
+      }
     });
   } else {
-    generateGuideContent(item);
+    // 沒有 Firebase → 用記憶體或 AI
+    if (guideData[itemId]) {
+      renderGuideContent(guideData[itemId], item);
+      if (refreshBtn) refreshBtn.style.display = 'block';
+    } else {
+      document.getElementById('guideLoadingText').textContent = '導遊正在分析中...';
+      generateGuideContent(item);
+    }
   }
 }
 
@@ -3619,23 +3577,21 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ni) ni.addEventListener('keydown', e => { if (e.key === 'Enter') addGuideNote(); });
 });
 
-// Persist guide data - 儲存鍵機制
+// Guide 資料：直接存 Firebase，不做任何 key/timestamp 比對
 function saveGuideData() {
-  const saveKey = Date.now().toString(36) + Math.random().toString(36).slice(2);
   const json = JSON.stringify(guideData);
-  try {
-    localStorage.setItem('nagano_guide', json);
-    localStorage.setItem('nagano_guide_key', saveKey);
-  } catch(e) {}
+  // 存 localStorage 備份
+  try { localStorage.setItem('nagano_guide', json); } catch(e) {}
+  // 直接寫 Firebase
   if (!_db) return;
   _db.collection('trips').doc(TRIP_ID + '_guide').set({
     guide: json,
-    saveKey: saveKey,
-  }).catch(e => console.error('saveGuideData Firebase 失敗', e));
+    savedAt: Date.now(),
+  }).catch(e => console.error('saveGuideData 失敗', e));
 }
 
 function loadGuideData() {
-  if (Object.keys(guideData).length > 0) return;
+  // 只從 localStorage 載入備份，Firebase 的在 openGuide 時才讀
   try {
     const raw = localStorage.getItem('nagano_guide');
     if (raw) guideData = JSON.parse(raw);
