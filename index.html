@@ -3466,23 +3466,25 @@ function renderGuideContent(data, item) {
 
       // 顯示/隱藏 sections
       const sections = document.querySelectorAll('#guideSections .guide-section');
+      const TAG_KEYWORDS = {
+        'must-eat': ['美食','必吃','推薦','料理','食'],
+        'must-buy': ['購物','必買','伴手','商品'],
+        'must-order': ['必點','菜單','招牌'],
+        'reserve': ['預約','注意','提醒'],
+        'tip': ['攻略','建議','提示','技巧'],
+        'story': ['故事','歷史','特色','介紹','背景'],
+      };
+      let firstVisible = null;
       sections.forEach((sec, si) => {
         if (type === 'all') {
           sec.style.display = '';
+          if (!firstVisible) firstVisible = sec;
         } else {
-          // 比對 section 標題或內容是否與 tag 相關
           const title = sec.querySelector('.guide-section-title')?.textContent || '';
-          const TAG_KEYWORDS = {
-            'must-eat': ['美食','必吃','推薦','料理','食'],
-            'must-buy': ['購物','必買','伴手','商品'],
-            'must-order': ['必點','菜單','招牌'],
-            'reserve': ['預約','注意','提醒'],
-            'tip': ['攻略','建議','提示','技巧'],
-            'story': ['故事','歷史','特色','介紹','背景'],
-          };
           const keywords = TAG_KEYWORDS[type] || [];
           const match = keywords.some(k => title.includes(k));
           sec.style.display = match ? '' : 'none';
+          if (match && !firstVisible) firstVisible = sec;
         }
         // 有顯示的 section 確保展開
         if (sec.style.display !== 'none') {
@@ -3492,6 +3494,10 @@ function renderGuideContent(data, item) {
           if (toggle) toggle.classList.add('open');
         }
       });
+      // 自動滾動到第一個對應的 section
+      if (firstVisible && type !== 'all') {
+        setTimeout(() => firstVisible.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      }
     };
   }
 
