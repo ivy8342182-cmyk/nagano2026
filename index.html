@@ -3446,59 +3446,12 @@ function renderGuideContent(data, item) {
   // Tags — 可點擊篩選對應區塊
   const tagsEl = document.getElementById('guideTags');
   if (tagsEl) {
-    // 加入「全部」tag
-    const allTags = [{ type: 'all', label: '全部' }, ...(data.tags || [])];
-    tagsEl.innerHTML = allTags.map(t => `
-      <span class="guide-tag ${t.type === 'all' ? 'tag-active' : ''}" data-tag="${t.type}" style="cursor:pointer;">
-        ${t.type === 'all' ? '📋' : tagIcon(t.type)} ${t.label}
+    tagsEl.innerHTML = (data.tags || []).map(t => `
+      <span class="guide-tag ${t.type}" style="cursor:default;">
+        ${tagIcon(t.type)} ${t.label}
       </span>
     `).join('');
-
-    // 點擊事件
-    tagsEl.onclick = function(e) {
-      const tag = e.target.closest('.guide-tag');
-      if (!tag) return;
-      const type = tag.dataset.tag;
-
-      // 切換 active 樣式
-      tagsEl.querySelectorAll('.guide-tag').forEach(t => t.classList.remove('tag-active'));
-      tag.classList.add('tag-active');
-
-      // 顯示/隱藏 sections
-      const sections = document.querySelectorAll('#guideSections .guide-section');
-      const TAG_KEYWORDS = {
-        'must-eat': ['美食','必吃','推薦','料理','食'],
-        'must-buy': ['購物','必買','伴手','商品'],
-        'must-order': ['必點','菜單','招牌'],
-        'reserve': ['預約','注意','提醒'],
-        'tip': ['攻略','建議','提示','技巧'],
-        'story': ['故事','歷史','特色','介紹','背景'],
-      };
-      let firstVisible = null;
-      sections.forEach((sec, si) => {
-        if (type === 'all') {
-          sec.style.display = '';
-          if (!firstVisible) firstVisible = sec;
-        } else {
-          const title = sec.querySelector('.guide-section-title')?.textContent || '';
-          const keywords = TAG_KEYWORDS[type] || [];
-          const match = keywords.some(k => title.includes(k));
-          sec.style.display = match ? '' : 'none';
-          if (match && !firstVisible) firstVisible = sec;
-        }
-        // 有顯示的 section 確保展開
-        if (sec.style.display !== 'none') {
-          const body = sec.querySelector('.guide-section-body');
-          const toggle = sec.querySelector('.guide-section-toggle');
-          if (body) body.classList.remove('collapsed');
-          if (toggle) toggle.classList.add('open');
-        }
-      });
-      // 自動滾動到第一個對應的 section
-      if (firstVisible && type !== 'all') {
-        setTimeout(() => firstVisible.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-      }
-    };
+    tagsEl.onclick = null;
   }
 
   // Sections
