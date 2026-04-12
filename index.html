@@ -3162,6 +3162,7 @@ function openGuide(itemId, e) {
 }
 
 async function generateGuideContent(item) {
+  const WORKER_URL = 'https://nagano-ai-proxy.ivy8342182.workers.dev';
   const loadingMsgs = ['搜尋景點故事中...','整理攻略資訊中...','分析必吃美食中...','彙整導遊建議中...'];
   let msgIdx = 0;
   const msgTimer = setInterval(() => {
@@ -3211,8 +3212,19 @@ ${catHints[item.cat] || ''}
 - 只回傳 JSON，不要有其他文字`;
 
   try {
-    // 根據景點資料生成客製化內容
-    const generated = buildSmartGuide(item);
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const generated = JSON.parse(clean);
     generated.notes = guideData[String(currentGuideItemId)]?.notes || [];
     guideData[String(currentGuideItemId)] = generated;
     saveGuideData();
@@ -3222,7 +3234,7 @@ ${catHints[item.cat] || ''}
   } catch(err) {
     clearInterval(msgTimer);
     _guideGenerating = false;
-    const fallback = buildFallbackGuide(item);
+    const fallback = buildSmartGuide(item);
     fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
     guideData[String(currentGuideItemId)] = fallback;
     saveGuideData();
