@@ -3179,37 +3179,12 @@ async function generateGuideContent(item) {
     other: '重點介紹：地點特色、實用建議、注意事項',
   };
 
-  const prompt = `你是一位專業的日本長野地區導遊，請針對「${item.name}」提供豐富詳細的導遊資訊。
+  const prompt = `你是日本長野導遊，針對「${item.name}」（${CAT_LABELS[item.cat]}）提供導遊資訊。${item.notes ? '備註：' + item.notes : ''}
 
-分類：${CAT_LABELS[item.cat]}
-備註：${item.notes || '無'}
-${catHints[item.cat] || ''}
+以 JSON 格式回覆（繁體中文），結構：
+{"tags":[{"type":"must-eat|must-buy|reserve|tip|story","label":"5字內"}],"sections":[{"title":"標題","icon":"emoji","items":[{"icon":"emoji","text":"具體說明50字內","badge":"必吃|必買|需預約|小提示|"}]}]}
 
-請以 JSON 格式回覆，結構如下（所有文字用繁體中文）：
-{
-  "tags": [
-    {"type": "must-eat|must-buy|must-order|reserve|tip|story", "label": "標籤文字（5字以內）"}
-  ],
-  "sections": [
-    {
-      "title": "區塊標題（例：景點故事、參觀攻略、必吃推薦、注意事項）",
-      "icon": "emoji",
-      "items": [
-        {"icon": "emoji", "text": "說明文字（50字以內，內容要具體實用）", "badge": "必吃|必買|必點|需預約|小提示|（空字串表示無徽章）"}
-      ]
-    }
-  ]
-}
-
-重要規則：
-- tags 最多 4 個，只選最重要的
-- sections 至少 3 個，包含：歷史故事/特色介紹、實用攻略、特別注意事項
-- 每個 section 的 items 4-6 筆，內容要具體有用
-- 景點/餐廳要有歷史背景或特色故事
-- 攻略要有具體建議（時間、入口、拍照地點等）
-- 若需要預約一定要標註
-- badge 只在特別重要時填寫
-- 只回傳 JSON，不要有其他文字`;
+規則：tags最多3個，sections 3個（故事/特色、攻略、注意事項），每section items 3-4筆，只回傳JSON。`;
 
   try {
     const res = await fetch(WORKER_URL, {
@@ -3217,7 +3192,7 @@ ${catHints[item.cat] || ''}
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1500,
+        max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }]
       })
     });
