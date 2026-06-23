@@ -3234,6 +3234,11 @@ ${catHints[item.cat] || ''}
   } catch(err) {
     clearInterval(msgTimer);
     _guideGenerating = false;
+    console.error('AI 生成錯誤:', err);
+    // 顯示錯誤訊息讓使用者知道發生什麼
+    const loadingEl = document.getElementById('guideLoading');
+    if (loadingEl) loadingEl.innerHTML = `<div style="padding:20px;color:#c00;font-size:13px;">AI 生成失敗：${err.message}<br><br>改用內建資料</div>`;
+    await new Promise(r => setTimeout(r, 2000));
     const fallback = buildSmartGuide(item);
     fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
     guideData[String(currentGuideItemId)] = fallback;
