@@ -3216,13 +3216,18 @@ ${catHints[item.cat] || ''}
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }]
       })
     });
     const data = await res.json();
+    // 若 Worker 回傳錯誤，顯示出來
+    if (data.error) {
+      throw new Error('API: ' + JSON.stringify(data.error).slice(0, 100));
+    }
     const text = data.content?.[0]?.text || '';
+    if (!text) {
+      throw new Error('空回應: ' + JSON.stringify(data).slice(0, 150));
+    }
     const clean = text.replace(/```json|```/g, '').trim();
     const generated = JSON.parse(clean);
     generated.notes = guideData[String(currentGuideItemId)]?.notes || [];
@@ -3235,19 +3240,24 @@ ${catHints[item.cat] || ''}
     clearInterval(msgTimer);
     _guideGenerating = false;
     console.error('AI 生成錯誤:', err);
-    try {
-      const fallback = buildSmartGuide(item);
-      fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
-      guideData[String(currentGuideItemId)] = fallback;
-      saveGuideData();
-      renderGuideContent(fallback, item);
-    } catch(e2) {
-      // 最後防線：強制隱藏 loading 顯示 content
-      const loading = document.getElementById('guideLoading');
-      const content = document.getElementById('guideContent');
-      if (loading) loading.style.display = 'none';
-      if (content) content.style.display = 'block';
+    // 顯示確切錯誤訊息（方便除錯）
+    const loading = document.getElementById('guideLoading');
+    if (loading) {
+      loading.innerHTML = `<div style="padding:24px;text-align:center;">
+        <div style="color:#c00;font-size:13px;line-height:1.6;margin-bottom:16px;">⚠️ ${err.message}</div>
+        <button onclick="document.getElementById('guideLoading').style.display='none';document.getElementById('guideContent').style.display='block';" 
+          style="padding:10px 20px;background:var(--moss);color:#fff;border:none;border-radius:20px;font-size:14px;">改用內建資料</button>
+      </div>`;
     }
+    // 同時準備好內建資料
+    const fallback = buildSmartGuide(item);
+    fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
+    guideData[String(currentGuideItemId)] = fallback;
+    saveGuideData();
+    renderGuideContent(fallback, item);
+    if (loading) loading.style.display = 'flex';
+    const content = document.getElementById('guideContent');
+    if (content) content.style.display = 'none';
   }
 }
 
