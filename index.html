@@ -3235,22 +3235,19 @@ ${catHints[item.cat] || ''}
     clearInterval(msgTimer);
     _guideGenerating = false;
     console.error('AI 生成錯誤:', err);
-    const fallback = buildSmartGuide(item);
-    fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
-    guideData[String(currentGuideItemId)] = fallback;
-    saveGuideData();
-    renderGuideContent(fallback, item);
-    // 顯示小提示在標籤上方
-    setTimeout(() => {
-      const tagsEl = document.getElementById('guideTags');
-      if (tagsEl && !tagsEl.previousElementSibling?.classList.contains('ai-err-note')) {
-        const errNote = document.createElement('div');
-        errNote.className = 'ai-err-note';
-        errNote.style.cssText = 'font-size:11px;color:#c00;padding:4px 8px;background:#fff0f0;border-radius:8px;margin-bottom:6px;';
-        errNote.textContent = '⚠️ AI 連線失敗（' + err.message + '）';
-        tagsEl.parentNode.insertBefore(errNote, tagsEl);
-      }
-    }, 100);
+    try {
+      const fallback = buildSmartGuide(item);
+      fallback.notes = guideData[String(currentGuideItemId)]?.notes || [];
+      guideData[String(currentGuideItemId)] = fallback;
+      saveGuideData();
+      renderGuideContent(fallback, item);
+    } catch(e2) {
+      // 最後防線：強制隱藏 loading 顯示 content
+      const loading = document.getElementById('guideLoading');
+      const content = document.getElementById('guideContent');
+      if (loading) loading.style.display = 'none';
+      if (content) content.style.display = 'block';
+    }
   }
 }
 
